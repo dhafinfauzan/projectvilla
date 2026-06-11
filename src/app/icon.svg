@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Elegant "T" monogram — forest green field, thin gold inset frame -->
+  <rect width="64" height="64" rx="8" fill="#1e3328"/>
+  <rect x="5.5" y="5.5" width="53" height="53" rx="4.5" fill="none" stroke="#b08d57" stroke-width="1"/>
+  <text
+    x="32"
+    y="44"
+    text-anchor="middle"
+    font-family="Playfair Display, Georgia, 'Times New Roman', serif"
+    font-size="38"
+    fill="#cbb288"
+  >T</text>
+</svg>

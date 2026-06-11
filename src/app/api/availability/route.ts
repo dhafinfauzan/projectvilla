@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { expireStaleBookings } from "@/lib/bookings";
 
 /**
  * GET /api/availability?villa=<slug>&checkIn=YYYY-MM-DD&checkOut=YYYY-MM-DD
@@ -26,6 +27,9 @@ export async function GET(req: NextRequest) {
   if (!villa) {
     return NextResponse.json({ error: "Villa not found" }, { status: 404 });
   }
+
+  // Release date holds from unpaid bookings before counting.
+  await expireStaleBookings();
 
   const overlapping = await prisma.booking.count({
     where: {

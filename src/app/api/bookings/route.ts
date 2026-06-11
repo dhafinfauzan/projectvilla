@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createPaymentSession } from "@/lib/payment";
+import { expireStaleBookings } from "@/lib/bookings";
 
 function generateBookingCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -68,6 +69,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Release date holds from unpaid bookings before checking availability.
+  await expireStaleBookings();
+
   // Availability check inside a transaction to avoid double-booking races.
   const booking = await prisma.$transaction(async (tx) => {
     const overlapping = await tx.booking.count({
@@ -105,14 +109,28 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const payment = await createPaymentSession({
-    bookingCode: booking.bookingCode,
-    totalAmount: booking.totalAmount,
-    guestName,
-    email,
-    phone,
-    villaName: villa.name,
-  });
+  let payment;
+  try {
+    payment = await createPaymentSession({
+      bookingCode: booking.bookingCode,
+      totalAmount: booking.totalAmount,
+      guestName,
+      email,
+      phone,
+      villaName: villa.name,
+    });
+  } catch (err) {
+    // Release the hold so a failed gateway call doesn't block the dates.
+    await prisma.booking.update({
+      where: { id: booking.id },
+      data: { status: "CANCELLED" },
+    });
+    console.error("Payment session failed:", err);
+    return NextResponse.json(
+      { error: "Payment gateway is unavailable. Please try again." },
+      { status: 502 }
+    );
+  }
 
   await prisma.booking.update({
     where: { id: booking.id },

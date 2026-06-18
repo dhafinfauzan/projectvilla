@@ -4,44 +4,6 @@ import { qloFetch, buildXml, QloAppsError, flattenLang } from "@/lib/qloapps-cli
 export const dynamic = "force-dynamic";
 
 const ID_HOTEL = Number(process.env.QLOAPPS_ID_HOTEL ?? 1);
-// When QloApps can't be reached (env not set, ngrok down, etc.) fall back to
-// placeholder data so the booking flow still works for testing/demo. Set
-// QLOAPPS_DEMO_FALLBACK="false" to disable and surface the real error instead.
-const DEMO_FALLBACK = process.env.QLOAPPS_DEMO_FALLBACK !== "false";
-
-// Mirrors the three villas in src/lib/villas.ts (ids 1/2/3) so any villa the
-// guest picks resolves to an "available" room type in demo mode.
-const DEMO_ROOMS = [
-  { id: 1, name: "Taru Garden Villa", pricePerNight: 4200000 },
-  { id: 2, name: "Taru River Villa", pricePerNight: 6800000 },
-  { id: 3, name: "Taru Sky Estate", pricePerNight: 12500000 },
-];
-
-function demoAvailability(
-  date_from: string,
-  date_to: string,
-  adults: number,
-  children: number,
-  nights: number
-) {
-  return {
-    dateFrom: date_from,
-    dateTo: date_to,
-    nights,
-    adults,
-    children,
-    totalAvailableRooms: DEMO_ROOMS.length,
-    mode: "demo" as const,
-    roomTypes: DEMO_ROOMS.map((r) => ({
-      id: r.id,
-      name: r.name,
-      basePricePerNight: r.pricePerNight,
-      totalPrice: r.pricePerNight * nights,
-      pricePerNight: r.pricePerNight,
-      availableRooms: 3,
-    })),
-  };
-}
 
 /**
  * POST /api/check-availability
@@ -135,18 +97,9 @@ export async function POST(req: NextRequest) {
       adults,
       children,
       totalAvailableRooms: Number(ari?.total_available_rooms ?? 0),
-      mode: "live" as const,
       roomTypes: available,
     });
   } catch (err) {
-    // QloApps unreachable/unconfigured — keep the demo working.
-    if (DEMO_FALLBACK) {
-      console.warn(
-        "[check-availability] QloApps failed, using demo fallback:",
-        err instanceof Error ? err.message : err
-      );
-      return NextResponse.json(demoAvailability(date_from, date_to, adults, children, nights));
-    }
     if (err instanceof QloAppsError) {
       return NextResponse.json({ error: err.message }, { status: err.status ?? 502 });
     }

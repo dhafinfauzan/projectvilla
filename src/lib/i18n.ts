@@ -3,6 +3,7 @@ export type Lang = "en" | "id";
 export const dictionary = {
   nav: {
     villas: { en: "Villas", id: "Villa" },
+    rooms: { en: "Rooms", id: "Kamar" },
     experiences: { en: "Experiences", id: "Pengalaman" },
     gallery: { en: "Gallery", id: "Galeri" },
     contact: { en: "Contact", id: "Kontak" },

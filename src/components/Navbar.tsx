@@ -8,6 +8,7 @@ import { useLang } from "@/context/LanguageContext";
 
 const links = [
   { href: "/villas", key: "nav.villas" },
+  { href: "/rooms", key: "nav.rooms" },
   { href: "/experiences", key: "nav.experiences" },
   { href: "/gallery", key: "nav.gallery" },
   { href: "/contact", key: "nav.contact" },

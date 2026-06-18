@@ -1,5 +1,11 @@
 export type VillaContent = {
   slug: string;
+  /**
+   * QloApps room_type id this villa maps to (backend is QloApps; the rich
+   * marketing content here stays custom). Adjust these to match the real
+   * room_type ids in your QloApps install — confirm via GET /api/room-types.
+   */
+  qloRoomTypeId: number;
   name: string;
   tagline: { en: string; id: string };
   description: { en: string; id: string };
@@ -19,6 +25,7 @@ const u = (id: string, w = 1600) =>
 export const villas: VillaContent[] = [
   {
     slug: "taru-garden-villa",
+    qloRoomTypeId: 1,
     name: "Taru Garden Villa",
     tagline: {
       en: "A private sanctuary wrapped in tropical gardens",
@@ -54,6 +61,7 @@ export const villas: VillaContent[] = [
   },
   {
     slug: "taru-river-villa",
+    qloRoomTypeId: 2,
     name: "Taru River Villa",
     tagline: {
       en: "Two bedrooms above the sacred Ayung river",
@@ -89,6 +97,7 @@ export const villas: VillaContent[] = [
   },
   {
     slug: "taru-sky-estate",
+    qloRoomTypeId: 3,
     name: "Taru Sky Estate",
     tagline: {
       en: "The crown of the resort — panoramic jungle estate",

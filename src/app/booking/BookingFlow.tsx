@@ -40,6 +40,8 @@ export default function BookingFlow() {
   const [requests, setRequests] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Live price returned by QloApps for the selected dates (source of truth).
+  const [qloTotal, setQloTotal] = useState<number | null>(null);
 
   const villa = useMemo(
     () => villas.find((v) => v.slug === villaSlug) ?? null,
@@ -48,7 +50,10 @@ export default function BookingFlow() {
 
   const nights =
     checkIn && checkOut && checkOut > checkIn ? nightsBetween(checkIn, checkOut) : 0;
-  const total = villa && nights > 0 ? nights * villa.pricePerNight : 0;
+  // Prefer the QloApps total once availability is checked; fall back to the
+  // listed nightly rate for the on-screen estimate before that.
+  const total =
+    qloTotal ?? (villa && nights > 0 ? nights * villa.pricePerNight : 0);
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -57,11 +62,33 @@ export default function BookingFlow() {
     setAvailability("checking");
     setError(null);
     try {
-      const res = await fetch(
-        `/api/availability?villa=${villa.slug}&checkIn=${checkIn}&checkOut=${checkOut}`
-      );
+      const res = await fetch("/api/check-availability", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date_from: checkIn,
+          date_to: checkOut,
+          adults: guests,
+          children: 0,
+        }),
+      });
       const data = await res.json();
-      setAvailability(data.available ? "available" : "unavailable");
+      if (!res.ok) {
+        setError(data.error ?? t("booking.errorGeneric"));
+        setAvailability("unknown");
+        return;
+      }
+      type AriRoom = { id: number; totalPrice: number; availableRooms: number };
+      const match = (data.roomTypes as AriRoom[] | undefined)?.find(
+        (rt) => rt.id === villa.qloRoomTypeId
+      );
+      if (match && match.availableRooms > 0) {
+        setQloTotal(match.totalPrice > 0 ? match.totalPrice : null);
+        setAvailability("available");
+      } else {
+        setQloTotal(null);
+        setAvailability("unavailable");
+      }
     } catch {
       setAvailability("unknown");
       setError(t("booking.errorGeneric"));
@@ -73,18 +100,23 @@ export default function BookingFlow() {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/bookings", {
+      // QloApps stores first/last name separately.
+      const parts = guestName.trim().split(/\s+/);
+      const firstname = parts.shift() ?? guestName;
+      const lastname = parts.join(" ") || firstname;
+
+      const res = await fetch("/api/submit-booking", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          villa: villa.slug,
-          checkIn,
-          checkOut,
-          guests,
-          guestName,
+          firstname,
+          lastname,
           email,
           phone,
-          specialRequests: requests,
+          id_room_type: villa.qloRoomTypeId,
+          checkin_date: checkIn,
+          checkout_date: checkOut,
+          total_price: total,
         }),
       });
       const data = await res.json();
@@ -93,9 +125,18 @@ export default function BookingFlow() {
         setSubmitting(false);
         return;
       }
-      // Real gateways redirect to an external checkout; the mock gateway
-      // points straight at the confirmation page.
-      router.push(data.redirectUrl);
+      // Pass the QloApps booking id + summary to the confirmation page
+      // (there's no public GET-by-id, so we render from these params).
+      const params = new URLSearchParams({
+        id: String(data.bookingId),
+        villa: villa.name,
+        checkIn,
+        checkOut,
+        guests: String(guests),
+        total: String(total),
+        name: guestName,
+      });
+      router.push(`/booking/confirmation?${params.toString()}`);
     } catch {
       setError(t("booking.errorGeneric"));
       setSubmitting(false);
@@ -241,6 +282,7 @@ export default function BookingFlow() {
                       onChange={(e) => {
                         setCheckIn(e.target.value);
                         setAvailability("unknown");
+                        setQloTotal(null);
                       }}
                       className="w-full border border-cream/25 bg-transparent px-4 py-3.5 text-sm text-cream outline-none transition focus:border-gold"
                     />
@@ -256,6 +298,7 @@ export default function BookingFlow() {
                       onChange={(e) => {
                         setCheckOut(e.target.value);
                         setAvailability("unknown");
+                        setQloTotal(null);
                       }}
                       className="w-full border border-cream/25 bg-transparent px-4 py-3.5 text-sm text-cream outline-none transition focus:border-gold"
                     />

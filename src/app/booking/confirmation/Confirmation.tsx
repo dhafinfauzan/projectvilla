@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useLang } from "@/context/LanguageContext";
-import { formatDate, formatIDR } from "@/lib/format";
+import { formatDate, formatIDR, nightsBetween } from "@/lib/format";
 
 type BookingDetails = {
   bookingCode: string;
@@ -23,17 +23,42 @@ export default function Confirmation() {
   const { t, lang } = useLang();
   const searchParams = useSearchParams();
   const code = searchParams.get("code");
+  // QloApps bookings arrive as ?id=<n> plus a summary in the query string
+  // (no public GET-by-id endpoint), so we render straight from the params.
+  const qloId = searchParams.get("id");
 
-  const [booking, setBooking] = useState<BookingDetails | null>(null);
-  const [loading, setLoading] = useState(Boolean(code));
+  // QloApps booking is derived purely from query params — no fetch needed.
+  const qloBooking = useMemo<BookingDetails | null>(() => {
+    if (!qloId) return null;
+    const checkIn = searchParams.get("checkIn") ?? "";
+    const checkOut = searchParams.get("checkOut") ?? "";
+    return {
+      bookingCode: `#${qloId}`,
+      villaName: searchParams.get("villa") ?? "",
+      checkIn,
+      checkOut,
+      nights: checkIn && checkOut ? nightsBetween(checkIn, checkOut) : 0,
+      guests: Number(searchParams.get("guests") ?? 0),
+      guestName: searchParams.get("name") ?? "",
+      totalAmount: Number(searchParams.get("total") ?? 0),
+      status: "PENDING",
+    };
+  }, [qloId, searchParams]);
+
+  // Legacy/Prisma path: look up a booking by its code.
+  const [fetched, setFetched] = useState<BookingDetails | null>(null);
+  const [loadingFetch, setLoadingFetch] = useState(Boolean(code) && !qloId);
 
   useEffect(() => {
-    if (!code) return;
+    if (qloId || !code) return;
     fetch(`/api/bookings?code=${encodeURIComponent(code)}`)
       .then((r) => r.json())
-      .then((data) => setBooking(data.booking ?? null))
-      .finally(() => setLoading(false));
-  }, [code]);
+      .then((data) => setFetched(data.booking ?? null))
+      .finally(() => setLoadingFetch(false));
+  }, [code, qloId]);
+
+  const booking = qloBooking ?? fetched;
+  const loading = loadingFetch;
 
   return (
     <div className="flex min-h-svh items-center justify-center bg-ink px-5 pb-20 pt-32 text-cream">

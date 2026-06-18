@@ -101,6 +101,52 @@ key gate for real auth (NextAuth/Clerk) when staff accounts are needed.
    `DATABASE_URL=<prod url> npx prisma db push && DATABASE_URL=<prod url> npx prisma db seed`.
 5. Point the payment gateway webhook at the production domain (see above).
 
+## QloApps integration (optional backend)
+
+This repo can source rooms, availability, and bookings from a
+[QloApps](https://qloapps.com) PMS instead of the built-in Prisma store. The
+QloApps admin/PMS is used as-is — these routes are a thin server-side proxy
+so the QloApps API key never reaches the browser.
+
+**Setup** — put your QloApps webservice details in `.env.local` (gitignored):
+
+```bash
+QLOAPPS_API_URL=https://your-qloapps-host        # ngrok URL in dev; changes on restart
+QLOAPPS_API_KEY=your-webservice-key
+# Optional overrides:
+QLOAPPS_ID_HOTEL=1                                # hotel/property id (default 1)
+QLOAPPS_BOOKING_STATUS=1                          # confirm valid codes via schema=synopsis
+QLOAPPS_PAYMENT_STATUS=0
+```
+
+**Middleware routes** (all server-side; key read from `process.env`):
+
+| Route | Method | QloApps call |
+| --- | --- | --- |
+| `/api/room-types` (`?id=` for one) | GET | `GET /api/room_types` |
+| `/api/check-availability` | POST | `POST /api/hotel_ari` (XML body) |
+| `/api/submit-booking` | POST | `POST /api/bookings` (XML body) |
+| `/api/room-image/{roomTypeId}/{imageId}` | GET | streams `GET /api/images/room_types/...` |
+
+Shared logic lives in `src/lib/qloapps-client.ts` (Basic-Auth header, JS→XML
+builder, fetch wrapper with explicit errors for unreachable host, 302
+shop_url redirect, bad key, and non-JSON responses).
+
+> **Image note:** room images are proxied through `/api/room-image/...` rather
+> than linking QloApps' image URL directly — a direct URL would embed the
+> `ws_key` in the browser, defeating the whole point of the proxy.
+
+**Demo page:** `/rooms` lists QloApps room types, checks availability for a
+date range, and submits a pending booking — wired to all three routes. The
+existing villa site (`/villas`, `/booking`) still runs on Prisma; merge the
+flows once the live QloApps backend is verified.
+
+**Testing locally** (QloApps reachable from your machine):
+
+1. Open `http://localhost:3000/api/room-types` — should return room JSON.
+2. `curl -X POST localhost:3000/api/check-availability -H 'Content-Type: application/json' -d '{"date_from":"2026-07-10","date_to":"2026-07-13","adults":2}'`
+3. POST to `/api/submit-booking`, then check the QloApps admin for the new booking.
+
 ## Photos
 
 All photography is hot-linked from [Unsplash](https://unsplash.com) under the

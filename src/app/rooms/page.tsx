@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { formatIDR } from "@/lib/format";
 import { useRoomTypes, type RoomType } from "@/lib/useRoomTypes";
+import QrisPayment from "@/components/QrisPayment";
 
 /**
  * The villas/rooms page — the single rooms list for the whole site, sourced
@@ -245,7 +246,14 @@ function BookingForm({
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<{ id: number } | null>(null);
+  const [result, setResult] = useState<{
+    id: string | number;
+    qrString?: string;
+    paymentRequestId?: string;
+    amount?: number;
+    expiresAt?: string | null;
+    qrError?: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function submit() {
@@ -268,7 +276,14 @@ function BookingForm({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Gagal membuat booking");
-      setResult({ id: data.bookingId });
+      setResult({
+        id: data.bookingId,
+        qrString: data.qrString,
+        paymentRequestId: data.paymentRequestId,
+        amount: data.amount,
+        expiresAt: data.expiresAt,
+        qrError: data.qrError,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
     } finally {
@@ -277,11 +292,25 @@ function BookingForm({
   }
 
   if (result) {
+    // QRIS ready → show the scannable payment. Otherwise the booking was
+    // created but the QR couldn't be generated.
+    if (result.qrString && result.paymentRequestId) {
+      return (
+        <QrisPayment
+          bookingId={result.id}
+          qrString={result.qrString}
+          amount={result.amount ?? totalPrice}
+          paymentRequestId={result.paymentRequestId}
+          expiresAt={result.expiresAt}
+        />
+      );
+    }
     return (
-      <div className="mt-4 border border-emerald-400/40 bg-emerald-400/10 p-4 text-center text-sm text-emerald-200">
+      <div className="mt-4 border border-gold/40 bg-gold/10 p-4 text-center text-sm text-gold-light">
         ✓ Booking dibuat. ID #{result.id}
-        <p className="mt-1 text-xs text-emerald-300/80">
-          Status: pending — pembayaran diproses manual oleh staff.
+        <p className="mt-1 text-xs text-cream/60">
+          {result.qrError ??
+            "Status: pending — pembayaran diproses manual oleh staff."}
         </p>
       </div>
     );

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { qloFetch, buildXml, QloAppsError } from "@/lib/qloapps-client";
+import { createQrisPaymentRequest } from "@/lib/xendit";
 
 export const dynamic = "force-dynamic";
 
@@ -120,12 +121,40 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    return NextResponse.json({
-      success: true,
-      bookingId,
-      status: "PENDING",
-      message: "Booking berhasil dibuat. Pembayaran diproses manual oleh staff.",
-    });
+    // Booking exists in QloApps (pending). Generate the QRIS to pay it now.
+    // If Xendit fails, still return the booking so it isn't lost — the guest
+    // can be invoiced manually.
+    const amount = Math.round(Number(total_price ?? 0));
+    try {
+      const qris = await createQrisPaymentRequest({
+        bookingId,
+        amount,
+        checkinDate: checkin_date,
+        checkoutDate: checkout_date,
+      });
+      return NextResponse.json({
+        success: true,
+        bookingId,
+        status: "PENDING",
+        qrString: qris.qrString,
+        paymentRequestId: qris.paymentRequestId,
+        amount: qris.amount,
+        expiresAt: qris.expiresAt,
+      });
+    } catch (qErr) {
+      console.error(
+        "[submit-booking] QRIS creation failed:",
+        qErr instanceof Error ? qErr.message : qErr
+      );
+      return NextResponse.json({
+        success: true,
+        bookingId,
+        status: "PENDING",
+        amount,
+        qrError:
+          "Booking dibuat, tapi gagal menyiapkan pembayaran QRIS. Hubungi staff.",
+      });
+    }
   } catch (err) {
     if (err instanceof QloAppsError) {
       return NextResponse.json({ error: err.message }, { status: err.status ?? 502 });

@@ -1,14 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { formatIDR } from "@/lib/format";
 import { useRoomTypes, type RoomType } from "@/lib/useRoomTypes";
-import QrisPayment from "@/components/QrisPayment";
 
 /**
- * The villas/rooms page — the single rooms list for the whole site, sourced
- * from QloApps. Lists room types, checks availability for a date range, and
- * creates a booking, all via the /api middleware routes.
+ * Villas/rooms page — browse room types (from QloApps) and check availability
+ * for a date range. Booking + payment happens on the dedicated /checkout page.
  */
 
 type Availability = {
@@ -18,6 +17,8 @@ type Availability = {
   pricePerNight: number;
   availableRooms: number;
 };
+
+type Search = { dateFrom: string; dateTo: string; adults: number; children: number };
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -55,6 +56,8 @@ export default function RoomsPage() {
 
   const availabilityFor = (id: number) =>
     availability?.find((a) => a.id === id) ?? null;
+
+  const search: Search = { dateFrom, dateTo, adults, children };
 
   return (
     <div className="min-h-svh bg-ink px-5 pb-24 pt-32 text-cream md:px-10">
@@ -148,7 +151,7 @@ export default function RoomsPage() {
                 key={room.id}
                 room={room}
                 availability={availabilityFor(room.id)}
-                booking={{ dateFrom, dateTo }}
+                search={search}
               />
             ))}
           </div>
@@ -161,14 +164,22 @@ export default function RoomsPage() {
 function RoomCard({
   room,
   availability,
-  booking,
+  search,
 }: {
   room: RoomType;
   availability: Availability | null;
-  booking: { dateFrom: string; dateTo: string };
+  search: Search;
 }) {
-  const [showForm, setShowForm] = useState(false);
   const price = availability?.pricePerNight || room.pricePerNight;
+  const datesPicked = Boolean(search.dateFrom && search.dateTo);
+  const soldOut = availability != null && availability.availableRooms === 0;
+
+  const checkoutHref =
+    `/checkout?roomType=${room.id}` +
+    `&from=${encodeURIComponent(search.dateFrom)}` +
+    `&to=${encodeURIComponent(search.dateTo)}` +
+    `&adults=${search.adults}&children=${search.children}` +
+    `&name=${encodeURIComponent(room.name)}`;
 
   return (
     <div className="overflow-hidden border border-cream/15 bg-cream/5">
@@ -208,174 +219,24 @@ function RoomCard({
           </p>
         )}
 
-        {!showForm ? (
-          <button
-            onClick={() => setShowForm(true)}
-            disabled={!booking.dateFrom || !booking.dateTo}
-            className="mt-4 w-full border border-gold bg-gold py-2.5 text-xs tracking-[0.2em] uppercase text-ink transition enabled:hover:bg-gold-light disabled:opacity-40"
-            title={!booking.dateFrom ? "Pilih tanggal dulu di atas" : undefined}
+        {datesPicked && !soldOut ? (
+          <Link
+            href={checkoutHref}
+            className="mt-4 block w-full border border-gold bg-gold py-2.5 text-center text-xs tracking-[0.2em] uppercase text-ink transition hover:bg-gold-light"
           >
             Book Now
-          </button>
+          </Link>
         ) : (
-          <BookingForm
-            room={room}
-            booking={booking}
-            totalPrice={availability?.totalPrice ?? 0}
-            onCancel={() => setShowForm(false)}
-          />
+          <button
+            disabled
+            className="mt-4 w-full cursor-not-allowed border border-gold/40 bg-gold/10 py-2.5 text-xs tracking-[0.2em] uppercase text-gold-light/50"
+            title={
+              soldOut ? "Tidak tersedia untuk tanggal ini" : "Pilih tanggal dulu di atas"
+            }
+          >
+            {soldOut ? "Tidak tersedia" : "Pilih tanggal dulu"}
+          </button>
         )}
-      </div>
-    </div>
-  );
-}
-
-function BookingForm({
-  room,
-  booking,
-  totalPrice,
-  onCancel,
-}: {
-  room: RoomType;
-  booking: { dateFrom: string; dateTo: string };
-  totalPrice: number;
-  onCancel: () => void;
-}) {
-  const [firstname, setFirstname] = useState("");
-  const [lastname, setLastname] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<{
-    id: string | number;
-    qrString?: string;
-    paymentRequestId?: string;
-    paymentMethodId?: string | null;
-    amount?: number;
-    expiresAt?: string | null;
-    testMode?: boolean;
-    qrError?: string;
-  } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit() {
-    setSubmitting(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/submit-booking", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          firstname,
-          lastname,
-          email,
-          phone,
-          id_room_type: room.id,
-          checkin_date: booking.dateFrom,
-          checkout_date: booking.dateTo,
-          total_price: totalPrice,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Gagal membuat booking");
-      setResult({
-        id: data.bookingId,
-        qrString: data.qrString,
-        paymentRequestId: data.paymentRequestId,
-        paymentMethodId: data.paymentMethodId,
-        amount: data.amount,
-        expiresAt: data.expiresAt,
-        testMode: data.testMode,
-        qrError: data.qrError,
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Error");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  if (result) {
-    // QRIS ready → show the scannable payment. Otherwise the booking was
-    // created but the QR couldn't be generated.
-    if (result.qrString && result.paymentRequestId) {
-      return (
-        <QrisPayment
-          bookingId={result.id}
-          qrString={result.qrString}
-          amount={result.amount ?? totalPrice}
-          paymentRequestId={result.paymentRequestId}
-          paymentMethodId={result.paymentMethodId}
-          expiresAt={result.expiresAt}
-          testMode={result.testMode}
-        />
-      );
-    }
-    return (
-      <div className="mt-4 border border-gold/40 bg-gold/10 p-4 text-center text-sm text-gold-light">
-        ✓ Booking dibuat. ID #{result.id}
-        <p className="mt-1 text-xs text-cream/60">
-          {result.qrError ??
-            "Status: pending — pembayaran diproses manual oleh staff."}
-        </p>
-      </div>
-    );
-  }
-
-  const valid =
-    firstname.trim() &&
-    lastname.trim() &&
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) &&
-    phone.trim().length > 5;
-
-  return (
-    <div className="mt-4 space-y-2.5">
-      <div className="grid grid-cols-2 gap-2.5">
-        <input
-          placeholder="First name"
-          value={firstname}
-          onChange={(e) => setFirstname(e.target.value)}
-          className="border border-cream/25 bg-transparent px-3 py-2 text-sm outline-none focus:border-gold"
-        />
-        <input
-          placeholder="Last name"
-          value={lastname}
-          onChange={(e) => setLastname(e.target.value)}
-          className="border border-cream/25 bg-transparent px-3 py-2 text-sm outline-none focus:border-gold"
-        />
-      </div>
-      <input
-        placeholder="Email"
-        type="email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        className="w-full border border-cream/25 bg-transparent px-3 py-2 text-sm outline-none focus:border-gold"
-      />
-      <input
-        placeholder="Phone"
-        type="tel"
-        value={phone}
-        onChange={(e) => setPhone(e.target.value)}
-        className="w-full border border-cream/25 bg-transparent px-3 py-2 text-sm outline-none focus:border-gold"
-      />
-
-      {error && <p className="text-xs text-red-300">{error}</p>}
-
-      <div className="flex gap-2.5 pt-1">
-        <button
-          onClick={onCancel}
-          disabled={submitting}
-          className="border border-cream/25 px-4 py-2 text-xs tracking-[0.2em] uppercase text-cream/70"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={submit}
-          disabled={!valid || submitting}
-          className="flex-1 border border-gold bg-gold py-2 text-xs tracking-[0.2em] uppercase text-ink transition enabled:hover:bg-gold-light disabled:opacity-40"
-        >
-          {submitting ? "Submitting…" : "Confirm booking"}
-        </button>
       </div>
     </div>
   );

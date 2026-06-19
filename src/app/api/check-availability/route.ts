@@ -75,9 +75,6 @@ export async function POST(req: NextRequest) {
       .map((rt) => {
         const totalPrice = Math.round(Number(rt.total_price_with_tax ?? 0));
         const basePrice = Math.round(Number(rt.base_price_with_tax ?? 0));
-        const availableCount = Array.isArray(rt.rooms?.available)
-          ? rt.rooms!.available.length
-          : 0;
         return {
           id: Number(rt.id_room_type),
           name: flattenLang(rt.name),
@@ -85,12 +82,12 @@ export async function POST(req: NextRequest) {
           totalPrice,
           // Derive per-night from the total when QloApps doesn't return a base.
           pricePerNight: basePrice || Math.round(totalPrice / nights),
-          availableRooms: availableCount,
+          availableRooms: countRooms(rt.rooms?.available),
         };
       })
       .filter((rt) => rt.availableRooms > 0 || rt.totalPrice > 0);
 
-    return NextResponse.json({
+    const payload: Record<string, unknown> = {
       dateFrom: date_from,
       dateTo: date_to,
       nights,
@@ -98,7 +95,14 @@ export async function POST(req: NextRequest) {
       children,
       totalAvailableRooms: Number(ari?.total_available_rooms ?? 0),
       roomTypes: available,
-    });
+    };
+
+    // Append ?debug=1 to inspect the raw QloApps hotel_ari response.
+    if (req.nextUrl.searchParams.get("debug")) {
+      payload._debug = data;
+    }
+
+    return NextResponse.json(payload);
   } catch (err) {
     if (err instanceof QloAppsError) {
       return NextResponse.json({ error: err.message }, { status: err.status ?? 502 });
@@ -116,10 +120,30 @@ type HotelAriResponse = {
       base_price_with_tax?: string | number;
       total_price_with_tax?: string | number;
       name?: unknown;
-      rooms?: { available?: unknown[]; booked?: unknown[] };
+      rooms?: { available?: unknown; booked?: unknown };
     }>;
   };
 };
+
+/**
+ * Counts available rooms regardless of how QloApps' JSON shapes the list:
+ * a plain array, a { room: [...] } / { room: {...} } wrapper, or an
+ * index-keyed object. PrestaShop-style webservices vary here, which is why a
+ * naive Array.isArray check can read 0 even when rooms exist.
+ */
+function countRooms(available: unknown): number {
+  if (!available) return 0;
+  if (Array.isArray(available)) return available.length;
+  if (typeof available === "object") {
+    const obj = available as Record<string, unknown>;
+    if ("room" in obj) {
+      const r = obj.room;
+      return Array.isArray(r) ? r.length : r ? 1 : 0;
+    }
+    return Object.keys(obj).length;
+  }
+  return 0;
+}
 
 function nightsBetween(from: string, to: string): number {
   const a = new Date(from);

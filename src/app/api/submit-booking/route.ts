@@ -4,13 +4,12 @@ import { qloFetch, buildXml, QloAppsError } from "@/lib/qloapps-client";
 export const dynamic = "force-dynamic";
 
 const ID_PROPERTY = Number(process.env.QLOAPPS_ID_HOTEL ?? 1);
-// QloApps rejects bookings without a currency. Default 1 is the first/default
-// currency in a QloApps install; override if yours differs.
-const ID_CURRENCY = Number(process.env.QLOAPPS_ID_CURRENCY ?? 1);
-// Booking/payment status codes vary per QloApps install. Confirm the valid
-// values from schema=synopsis (logged below) and override via env if needed.
-const BOOKING_STATUS = process.env.QLOAPPS_BOOKING_STATUS ?? "1"; // "Awaiting payment"
-const PAYMENT_STATUS = process.env.QLOAPPS_PAYMENT_STATUS ?? "0"; // unpaid / pending
+// QloApps validates currency by ISO code (Currency::getIdByIsoCode), not id.
+const CURRENCY = process.env.QLOAPPS_CURRENCY ?? "IDR";
+// booking_status: 1=new … 4=refunded. payment_status: 1=completed, 2=partial,
+// 3=awaiting. A pending website booking is new + awaiting payment.
+const BOOKING_STATUS = process.env.QLOAPPS_BOOKING_STATUS ?? "1";
+const PAYMENT_STATUS = process.env.QLOAPPS_PAYMENT_STATUS ?? "3";
 const BOOKING_SOURCE = "Website Custom";
 
 /**
@@ -85,7 +84,7 @@ export async function POST(req: NextRequest) {
       {
         booking: {
           id_property: ID_PROPERTY,
-          id_currency: ID_CURRENCY,
+          currency: CURRENCY,
           booking_status: BOOKING_STATUS,
           payment_status: PAYMENT_STATUS,
           source: BOOKING_SOURCE,

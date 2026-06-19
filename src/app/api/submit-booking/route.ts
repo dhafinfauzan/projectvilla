@@ -68,19 +68,6 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Inspect the official validation rules / blank schema before writing.
-    // Logged for development diagnostics so field names can be confirmed
-    // without trial-and-error.
-    try {
-      const synopsis = await qloFetch("/api/bookings", { query: { schema: "synopsis" } });
-      console.log("[submit-booking] bookings synopsis:", JSON.stringify(synopsis));
-    } catch (e) {
-      console.warn(
-        "[submit-booking] could not fetch bookings synopsis:",
-        e instanceof Error ? e.message : e
-      );
-    }
-
     const bookingXml = buildXml(
       {
         booking: {

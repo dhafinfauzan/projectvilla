@@ -47,8 +47,6 @@ export async function POST(req: NextRequest) {
     checkout_date?: string;
     total_price?: number;
   };
-  const adults = Number((body as { adults?: number }).adults ?? 2);
-  const children = Number((body as { children?: number }).children ?? 0);
   const numberOfRooms = Number((body as { number_of_rooms?: number }).number_of_rooms ?? 1);
 
   const missing = Object.entries({
@@ -103,12 +101,9 @@ export async function POST(req: NextRequest) {
               checkin_date,
               checkout_date,
               number_of_rooms: numberOfRooms,
-              rooms: {
-                room: {
-                  adults,
-                  child: children,
-                },
-              },
+              // No <rooms> block: QloApps auto-assigns rooms, applies the
+              // room type's default occupancy, and computes the price itself.
+              // Sending per-room detail would require unit_price/total_tax etc.
             },
           },
           price_details: {

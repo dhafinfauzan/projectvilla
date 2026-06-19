@@ -142,17 +142,14 @@ export async function POST(req: NextRequest) {
         expiresAt: qris.expiresAt,
       });
     } catch (qErr) {
-      console.error(
-        "[submit-booking] QRIS creation failed:",
-        qErr instanceof Error ? qErr.message : qErr
-      );
+      const detail = qErr instanceof Error ? qErr.message : String(qErr);
+      console.error("[submit-booking] QRIS creation failed:", detail);
       return NextResponse.json({
         success: true,
         bookingId,
         status: "PENDING",
         amount,
-        qrError:
-          "Booking dibuat, tapi gagal menyiapkan pembayaran QRIS. Hubungi staff.",
+        qrError: `Gagal menyiapkan QRIS: ${detail}`,
       });
     }
   } catch (err) {

@@ -36,23 +36,28 @@ export async function createQrisPaymentRequest(params: {
 }): Promise<QrisSession> {
   const xnd = getXenditClient();
 
-  const pr = await xnd.PaymentRequest.createPaymentRequest({
-    data: {
-      referenceId: `booking-${params.bookingId}-${Date.now()}`,
-      currency: "IDR",
-      amount: Math.round(params.amount),
-      paymentMethod: {
-        type: "QR_CODE",
-        reusability: "ONE_TIME_USE",
-        qrCode: { channelCode: "QRIS" },
+  let pr;
+  try {
+    pr = await xnd.PaymentRequest.createPaymentRequest({
+      data: {
+        referenceId: `booking-${params.bookingId}-${Date.now()}`,
+        currency: "IDR",
+        amount: Math.round(params.amount),
+        paymentMethod: {
+          type: "QR_CODE",
+          reusability: "ONE_TIME_USE",
+          qrCode: { channelCode: "QRIS" },
+        },
+        metadata: {
+          booking_id: String(params.bookingId),
+          checkin_date: params.checkinDate ?? "",
+          checkout_date: params.checkoutDate ?? "",
+        },
       },
-      metadata: {
-        booking_id: String(params.bookingId),
-        checkin_date: params.checkinDate ?? "",
-        checkout_date: params.checkoutDate ?? "",
-      },
-    },
-  });
+    });
+  } catch (err) {
+    throw new Error(`Xendit menolak request: ${describeXenditError(err)}`);
+  }
 
   const channelProps = pr.paymentMethod?.qrCode?.channelProperties;
   const qrString = channelProps?.qrString;
@@ -69,6 +74,26 @@ export async function createQrisPaymentRequest(params: {
       ? new Date(channelProps.expiresAt).toISOString()
       : null,
   };
+}
+
+/** Extracts a readable message from a xendit-node SDK error. */
+function describeXenditError(err: unknown): string {
+  if (err && typeof err === "object") {
+    const e = err as {
+      errorCode?: string;
+      message?: string;
+      rawResponse?: unknown;
+      status?: number;
+    };
+    const parts = [
+      e.status ? `HTTP ${e.status}` : null,
+      e.errorCode,
+      e.message,
+      e.rawResponse ? JSON.stringify(e.rawResponse) : null,
+    ].filter(Boolean);
+    if (parts.length) return parts.join(" — ");
+  }
+  return err instanceof Error ? err.message : String(err);
 }
 
 /** Returns the current status of a payment request (PENDING / SUCCEEDED / …). */

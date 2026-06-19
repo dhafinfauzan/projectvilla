@@ -116,6 +116,8 @@ export default function BookingFlow() {
           id_room_type: villa.qloRoomTypeId,
           checkin_date: checkIn,
           checkout_date: checkOut,
+          adults: guests,
+          children: 0,
           total_price: total,
         }),
       });

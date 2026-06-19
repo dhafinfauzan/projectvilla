@@ -47,6 +47,9 @@ export async function POST(req: NextRequest) {
     checkout_date?: string;
     total_price?: number;
   };
+  const adults = Number((body as { adults?: number }).adults ?? 2);
+  const children = Number((body as { children?: number }).children ?? 0);
+  const numberOfRooms = Number((body as { number_of_rooms?: number }).number_of_rooms ?? 1);
 
   const missing = Object.entries({
     firstname,
@@ -99,9 +102,18 @@ export async function POST(req: NextRequest) {
               id_room_type,
               checkin_date,
               checkout_date,
+              number_of_rooms: numberOfRooms,
+              rooms: {
+                room: {
+                  adults,
+                  child: children,
+                },
+              },
             },
           },
           price_details: {
+            // Nothing paid yet — payment is collected manually (awaiting).
+            total_paid: 0,
             total_price_with_tax: Math.round(Number(total_price ?? 0)),
           },
         },

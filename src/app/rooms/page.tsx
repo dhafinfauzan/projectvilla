@@ -212,9 +212,7 @@ function RoomCard({
         {availability && (
           <p className="mt-2 text-xs text-emerald-300">
             {availability.availableRooms > 0
-              ? `${availability.availableRooms} kamar tersedia · total ${formatIDR(
-                  availability.totalPrice
-                )}`
+              ? `${availability.availableRooms} kamar tersedia`
               : "Tidak tersedia untuk tanggal ini"}
           </p>
         )}

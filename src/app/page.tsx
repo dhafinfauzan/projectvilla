@@ -6,9 +6,9 @@ import { motion } from "framer-motion";
 import Hero from "@/components/Hero";
 import Reveal from "@/components/Reveal";
 import ParallaxImage from "@/components/ParallaxImage";
-import VillaCard from "@/components/VillaCard";
+import RoomShowcase from "@/components/RoomShowcase";
 import { useLang } from "@/context/LanguageContext";
-import { galleryItems, siteImages, villas } from "@/lib/villas";
+import { galleryItems, siteImages } from "@/lib/villas";
 
 export default function Home() {
   const { t, lang } = useLang();
@@ -83,13 +83,9 @@ export default function Home() {
             <p className="mx-auto mt-5 max-w-xl text-ink/70">{t("villas.subtitle")}</p>
           </Reveal>
 
-          <div className="grid gap-8 md:grid-cols-3">
-            {villas.map((villa, i) => (
-              <Reveal key={villa.slug} delay={i * 0.15}>
-                <VillaCard villa={villa} />
-              </Reveal>
-            ))}
-          </div>
+          <Reveal>
+            <RoomShowcase />
+          </Reveal>
         </div>
       </section>
 
@@ -205,7 +201,7 @@ export default function Home() {
             <p className="mt-5 text-cream/75">{t("cta.subtitle")}</p>
             <motion.div whileHover={{ scale: 1.03 }} className="mt-10 inline-block">
               <Link
-                href="/booking"
+                href="/rooms"
                 className="inline-block border border-gold bg-gold px-12 py-4 text-sm tracking-[0.3em] uppercase text-ink transition-colors duration-300 hover:bg-transparent hover:text-gold-light"
               >
                 {t("cta.button")}

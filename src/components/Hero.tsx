@@ -84,7 +84,7 @@ export default function Hero() {
           className="mt-10"
         >
           <Link
-            href="/booking"
+            href="/rooms"
             className="inline-block border border-gold bg-gold/10 px-10 py-4 text-sm tracking-[0.3em] uppercase text-gold-light backdrop-blur-sm transition-all duration-300 hover:bg-gold hover:text-ink"
           >
             {t("hero.cta")}

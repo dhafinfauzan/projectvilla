@@ -7,8 +7,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useLang } from "@/context/LanguageContext";
 
 const links = [
-  { href: "/villas", key: "nav.villas" },
-  { href: "/rooms", key: "nav.rooms" },
+  { href: "/rooms", key: "nav.villas" },
   { href: "/experiences", key: "nav.experiences" },
   { href: "/gallery", key: "nav.gallery" },
   { href: "/contact", key: "nav.contact" },
@@ -128,7 +127,7 @@ export default function Navbar() {
                 </Link>
               ))}
               <Link
-                href="/booking"
+                href="/rooms"
                 onClick={() => setOpen(false)}
                 className="mt-4 border border-gold bg-gold/10 px-5 py-3 text-center text-sm tracking-[0.25em] uppercase text-gold-light"
               >

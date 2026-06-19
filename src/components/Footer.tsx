@@ -28,7 +28,7 @@ export default function Footer() {
           </h3>
           <ul className="space-y-3 text-sm">
             <li>
-              <Link href="/villas" className="link-gold hover:text-cream">
+              <Link href="/rooms" className="link-gold hover:text-cream">
                 {t("nav.villas")}
               </Link>
             </li>
@@ -43,7 +43,7 @@ export default function Footer() {
               </Link>
             </li>
             <li>
-              <Link href="/booking" className="link-gold hover:text-cream">
+              <Link href="/rooms" className="link-gold hover:text-cream">
                 {t("nav.bookNow")}
               </Link>
             </li>

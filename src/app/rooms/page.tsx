@@ -1,27 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { formatIDR } from "@/lib/format";
+import { useRoomTypes, type RoomType } from "@/lib/useRoomTypes";
 
 /**
- * QloApps integration demo page.
- *
- * Proves the three middleware routes end-to-end:
- *   /api/room-types        — list room types + images
- *   /api/check-availability — availability & pricing for a date range
- *   /api/submit-booking     — create a pending booking in QloApps
- *
- * Once the live QloApps backend is confirmed working, this flow can be merged
- * into the main /booking experience.
+ * The villas/rooms page — the single rooms list for the whole site, sourced
+ * from QloApps. Lists room types, checks availability for a date range, and
+ * creates a booking, all via the /api middleware routes.
  */
-
-type RoomType = {
-  id: number;
-  name: string;
-  description: string;
-  pricePerNight: number;
-  images: string[];
-};
 
 type Availability = {
   id: number;
@@ -34,9 +21,7 @@ type Availability = {
 const today = new Date().toISOString().slice(0, 10);
 
 export default function RoomsPage() {
-  const [rooms, setRooms] = useState<RoomType[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const { rooms, loading, error: loadError } = useRoomTypes();
 
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -45,18 +30,6 @@ export default function RoomsPage() {
   const [checking, setChecking] = useState(false);
   const [availError, setAvailError] = useState<string | null>(null);
   const [availability, setAvailability] = useState<Availability[] | null>(null);
-
-  useEffect(() => {
-    fetch("/api/room-types")
-      .then(async (r) => {
-        const data = await r.json();
-        if (!r.ok) throw new Error(data.error ?? "Gagal memuat kamar");
-        return data;
-      })
-      .then((data) => setRooms(data.roomTypes ?? []))
-      .catch((e) => setLoadError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
 
   async function checkAvailability() {
     if (!dateFrom || !dateTo) return;
@@ -86,9 +59,9 @@ export default function RoomsPage() {
     <div className="min-h-svh bg-ink px-5 pb-24 pt-32 text-cream md:px-10">
       <div className="mx-auto max-w-6xl">
         <p className="text-xs tracking-[0.3em] uppercase text-gold-light">
-          Powered by QloApps
+          Ubud · Bali
         </p>
-        <h1 className="mt-2 font-serif text-3xl md:text-5xl">Our Rooms</h1>
+        <h1 className="mt-2 font-serif text-3xl md:text-5xl">Our Villas</h1>
 
         {/* Availability search */}
         <div className="mt-10 grid gap-4 border border-cream/15 bg-cream/5 p-6 md:grid-cols-[1fr_1fr_auto_auto_auto]">

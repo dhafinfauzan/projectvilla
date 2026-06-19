@@ -9,7 +9,9 @@ type Props = {
   qrString: string;
   amount: number;
   paymentRequestId: string;
+  paymentMethodId?: string | null;
   expiresAt?: string | null;
+  testMode?: boolean;
 };
 
 type Status = "PENDING" | "SUCCEEDED" | "FAILED";
@@ -19,10 +21,13 @@ export default function QrisPayment({
   qrString,
   amount,
   paymentRequestId,
+  paymentMethodId,
   expiresAt,
+  testMode,
 }: Props) {
   const [status, setStatus] = useState<Status>("PENDING");
   const [checking, setChecking] = useState(false);
+  const [simulating, setSimulating] = useState(false);
   const [remaining, setRemaining] = useState<number | null>(() =>
     expiresAt ? Math.max(0, new Date(expiresAt).getTime() - Date.now()) : null
   );
@@ -45,6 +50,21 @@ export default function QrisPayment({
       setChecking(false);
     }
   }, [paymentRequestId]);
+
+  const simulate = useCallback(async () => {
+    if (!paymentMethodId) return;
+    setSimulating(true);
+    try {
+      await fetch("/api/xendit/simulate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentMethodId, amount }),
+      });
+      setTimeout(checkStatus, 1500); // let Xendit settle, then refresh
+    } finally {
+      setSimulating(false);
+    }
+  }, [paymentMethodId, amount, checkStatus]);
 
   // Poll every 5s while pending. The effect re-runs when status changes, so
   // the interval is cleared automatically once payment resolves.
@@ -117,6 +137,16 @@ export default function QrisPayment({
       <p className="mt-2 text-[0.65rem] text-cream/40">
         Status diperbarui otomatis tiap 5 detik.
       </p>
+
+      {testMode && paymentMethodId && (
+        <button
+          onClick={simulate}
+          disabled={simulating}
+          className="mt-3 w-full border border-dashed border-cream/30 py-2 text-[0.65rem] tracking-[0.15em] uppercase text-cream/50 transition enabled:hover:border-cream/60 enabled:hover:text-cream/80 disabled:opacity-50"
+        >
+          {simulating ? "Menyimulasikan…" : "⚙ Simulate Payment (test mode)"}
+        </button>
+      )}
     </div>
   );
 }

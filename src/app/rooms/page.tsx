@@ -250,8 +250,10 @@ function BookingForm({
     id: string | number;
     qrString?: string;
     paymentRequestId?: string;
+    paymentMethodId?: string | null;
     amount?: number;
     expiresAt?: string | null;
+    testMode?: boolean;
     qrError?: string;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -280,8 +282,10 @@ function BookingForm({
         id: data.bookingId,
         qrString: data.qrString,
         paymentRequestId: data.paymentRequestId,
+        paymentMethodId: data.paymentMethodId,
         amount: data.amount,
         expiresAt: data.expiresAt,
+        testMode: data.testMode,
         qrError: data.qrError,
       });
     } catch (e) {
@@ -301,7 +305,9 @@ function BookingForm({
           qrString={result.qrString}
           amount={result.amount ?? totalPrice}
           paymentRequestId={result.paymentRequestId}
+          paymentMethodId={result.paymentMethodId}
           expiresAt={result.expiresAt}
+          testMode={result.testMode}
         />
       );
     }

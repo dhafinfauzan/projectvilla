@@ -138,8 +138,10 @@ export async function POST(req: NextRequest) {
         status: "PENDING",
         qrString: qris.qrString,
         paymentRequestId: qris.paymentRequestId,
+        paymentMethodId: qris.paymentMethodId,
         amount: qris.amount,
         expiresAt: qris.expiresAt,
+        testMode: qris.testMode,
       });
     } catch (qErr) {
       const detail = qErr instanceof Error ? qErr.message : String(qErr);

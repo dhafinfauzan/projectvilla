@@ -17,11 +17,18 @@ export function getXenditClient(): Xendit {
 
 export type QrisSession = {
   paymentRequestId: string;
+  paymentMethodId: string | null;
   qrString: string;
   amount: number;
   status: string;
   expiresAt: string | null;
+  testMode: boolean;
 };
+
+/** True when using a development/test secret key (enables payment simulation). */
+export function isTestMode(): boolean {
+  return (process.env.XENDIT_SECRET_KEY ?? "").includes("development");
+}
 
 /**
  * Creates a one-time QRIS payment request for a booking and returns the
@@ -67,13 +74,30 @@ export async function createQrisPaymentRequest(params: {
 
   return {
     paymentRequestId: pr.id,
+    paymentMethodId: pr.paymentMethod?.id ?? null,
     qrString,
     amount: pr.amount ?? Math.round(params.amount),
     status: pr.status,
     expiresAt: channelProps?.expiresAt
       ? new Date(channelProps.expiresAt).toISOString()
       : null,
+    testMode: isTestMode(),
   };
+}
+
+/**
+ * Simulates a successful payment in test mode. Triggers the same
+ * payment.succeeded webhook a real payment would. Throws on live keys.
+ */
+export async function simulateQrisPayment(
+  paymentMethodId: string,
+  amount: number
+): Promise<void> {
+  const xnd = getXenditClient();
+  await xnd.PaymentMethod.simulatePayment({
+    paymentMethodId,
+    data: { amount: Math.round(amount) },
+  });
 }
 
 /** Extracts a readable message from a xendit-node SDK error. */

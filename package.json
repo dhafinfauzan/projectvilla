@@ -3,20 +3,23 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "db:setup": "prisma generate && prisma db push && node prisma/seed.js",
-    "postinstall": "prisma generate"
-  },
-  "prisma": {
-    "seed": "node prisma/seed.js"
+    "admin:bootstrap": "node scripts/bootstrap-local-admin.mjs",
+    "backup": "node scripts/backup-local.mjs",
+    "verify": "node scripts/verify-villaos.mjs",
+    "db:postgres:prepare": "node scripts/prepare-postgres-schema.mjs",
+    "db:postgres:migrate": "node scripts/prepare-postgres-schema.mjs && prisma migrate deploy --schema=prisma/postgresql/schema.prisma",
+    "db:postgres:seed": "node scripts/prepare-postgres-schema.mjs && prisma generate --schema=prisma/postgresql/schema.prisma && node prisma/seed.js",
+    "postinstall": "node scripts/prisma-generate.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
     "framer-motion": "^12.40.0",
-    "next": "16.2.9",
+    "next": "^16.2.12",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-qr-code": "^2.2.0",
@@ -28,7 +31,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.9",
+    "eslint-config-next": "^16.2.12",
     "prisma": "^6.19.3",
     "tailwindcss": "^4",
     "typescript": "^5"

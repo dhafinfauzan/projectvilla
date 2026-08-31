@@ -6,8 +6,8 @@ import { formatIDR } from "@/lib/format";
 import { useRoomTypes, type RoomType } from "@/lib/useRoomTypes";
 
 /**
- * Villas/rooms page — browse room types (from QloApps) and check availability
- * for a date range. Booking + payment happens on the dedicated /checkout page.
+ * Villas/rooms page — browse VillaOS room types and check live availability.
+ * Booking + payment happens on the dedicated /checkout page.
  */
 
 type Availability = {
@@ -137,12 +137,12 @@ export default function RoomsPage() {
           <p className="mt-12 text-center text-cream/50">Memuat kamar…</p>
         ) : loadError ? (
           <div className="mt-12 border border-red-400/40 bg-red-400/10 p-6 text-sm text-red-200">
-            <p className="font-semibold">Gagal memuat data kamar dari QloApps:</p>
+            <p className="font-semibold">Gagal memuat data kamar dari VillaOS:</p>
             <p className="mt-2">{loadError}</p>
           </div>
         ) : rooms.length === 0 ? (
           <p className="mt-12 text-center text-cream/50">
-            Belum ada room type di QloApps.
+            Belum ada room type di VillaOS.
           </p>
         ) : (
           <div className="mt-12 grid gap-7 md:grid-cols-2 lg:grid-cols-3">

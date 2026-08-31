@@ -1,6 +1,11 @@
 import { timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { qloFetch, buildXml, QloAppsError } from "@/lib/qloapps-client";
+import { isLocalPms } from "@/lib/pms-backend";
+import { prisma } from "@/lib/prisma";
+import { recordPayment } from "@/lib/finance";
+import { writeAudit } from "@/lib/audit";
+import { completeWebhook, registerWebhook } from "@/lib/webhooks";
 
 export const dynamic = "force-dynamic";
 
@@ -31,16 +36,70 @@ export async function POST(req: NextRequest) {
   }
 
   const data = payload.data;
+  const eventId = data?.id ?? `${payload.event ?? "unknown"}:${data?.metadata?.booking_id ?? "missing"}`;
+  let webhook;
+  try {
+    webhook = await registerWebhook("xendit-payment-request", eventId, payload);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Webhook conflict" }, { status: 409 });
+  }
+  if (webhook.duplicate) return NextResponse.json({ received: true, duplicate: true });
   const succeeded = payload.event === "payment.succeeded" && data?.status === "SUCCEEDED";
   if (!succeeded) {
     // Acknowledge other events so Xendit doesn't retry them.
+    await completeWebhook(webhook.id, "IGNORED");
     return NextResponse.json({ received: true });
   }
 
   const bookingId = data?.metadata?.booking_id;
   if (!bookingId) {
     console.warn("[xendit-webhook] payment.succeeded without metadata.booking_id");
+    await completeWebhook(webhook.id, "FAILED", "Missing booking id");
     return NextResponse.json({ received: true });
+  }
+
+  if (isLocalPms()) {
+    const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking) {
+      await completeWebhook(webhook.id, "FAILED", "Booking not found");
+      return NextResponse.json({ error: "VillaOS booking not found" }, { status: 404 });
+    }
+    if (booking.status === "CONFIRMED") {
+      await completeWebhook(webhook.id, "PROCESSED");
+      return NextResponse.json({ received: true, alreadyPaid: true });
+    }
+    if (typeof data.amount === "number" && Math.round(data.amount) !== booking.totalAmount) {
+      console.error("[xendit-webhook] amount mismatch", {
+        bookingId,
+        expected: booking.totalAmount,
+        received: data.amount,
+      });
+      await completeWebhook(webhook.id, "FAILED", "Payment amount mismatch");
+      return NextResponse.json({ error: "Payment amount mismatch" }, { status: 409 });
+    }
+    if (booking.status !== "PENDING_PAYMENT") {
+      await completeWebhook(webhook.id, "FAILED", `Invalid booking status: ${booking.status}`);
+      return NextResponse.json({ error: `Invalid booking status: ${booking.status}` }, { status: 409 });
+    }
+    await recordPayment({
+      bookingId: booking.id,
+      provider: "xendit",
+      providerRef: data.id ?? booking.paymentRef ?? eventId,
+      amount: booking.totalAmount,
+      method: "QRIS",
+      metadata: payload,
+    });
+    await prisma.booking.update({
+      where: { id: booking.id },
+      data: {
+        status: "CONFIRMED",
+        paymentProvider: "xendit",
+        paymentRef: data.id ?? booking.paymentRef,
+      },
+    });
+    await writeAudit({ action: "PAYMENT_WEBHOOK_CONFIRMED", entityType: "BOOKING", entityId: booking.id, before: { status: booking.status }, after: { status: "CONFIRMED", provider: "xendit" } });
+    await completeWebhook(webhook.id, "PROCESSED");
+    return NextResponse.json({ received: true, updated: true, backend: "villaos" });
   }
 
   try {
@@ -73,6 +132,8 @@ export async function POST(req: NextRequest) {
       body: updateXml,
     });
 
+    await completeWebhook(webhook.id, "PROCESSED");
+
     return NextResponse.json({ received: true, updated: true });
   } catch (err) {
     // Return 500 so Xendit retries; the idempotency check above prevents a
@@ -80,6 +141,7 @@ export async function POST(req: NextRequest) {
     const message =
       err instanceof QloAppsError ? err.message : err instanceof Error ? err.message : "error";
     console.error("[xendit-webhook] QloApps update failed:", message);
+    await completeWebhook(webhook.id, "FAILED", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

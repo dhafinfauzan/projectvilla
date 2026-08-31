@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { qloFetch, buildXml, QloAppsError, flattenLang } from "@/lib/qloapps-client";
+import { compatibilityRoomTypeId, isLocalPms } from "@/lib/pms-backend";
+import { prisma } from "@/lib/prisma";
+import { availableUnitCount } from "@/lib/inventory";
+import { getRateQuote } from "@/lib/rates";
+import { expireStaleBookings } from "@/lib/bookings";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +45,46 @@ export async function POST(req: NextRequest) {
   const nights = nightsBetween(date_from, date_to);
   if (nights < 1) {
     return NextResponse.json({ error: "Rentang tanggal tidak valid" }, { status: 400 });
+  }
+
+  if (isLocalPms()) {
+    const checkIn = new Date(`${date_from}T14:00:00`);
+    const checkOut = new Date(`${date_to}T11:00:00`);
+    const villas = await prisma.villa.findMany({ orderBy: { pricePerNight: "asc" } });
+    await expireStaleBookings();
+    const roomTypes = (
+      await Promise.all(
+        villas.map(async (villa) => {
+          const compatibilityId = compatibilityRoomTypeId(villa.slug);
+          if (!compatibilityId || adults + children > villa.maxGuests) return null;
+          const [availableRooms, quote] = await Promise.all([
+            availableUnitCount(villa.id, checkIn, checkOut),
+            getRateQuote(villa, checkIn, checkOut),
+          ]);
+          return {
+            id: compatibilityId,
+            name: villa.name,
+            basePricePerNight: villa.pricePerNight,
+            totalPrice: quote.total,
+            pricePerNight: quote.averagePerNight,
+            availableRooms: quote.sellable ? availableRooms : 0,
+            minStay: quote.minStay,
+            restrictions: quote.restrictions,
+          };
+        })
+      )
+    ).filter((room): room is NonNullable<typeof room> => Boolean(room));
+
+    return NextResponse.json({
+      dateFrom: date_from,
+      dateTo: date_to,
+      nights,
+      adults,
+      children,
+      totalAvailableRooms: roomTypes.reduce((sum, room) => sum + room.availableRooms, 0),
+      roomTypes,
+      backend: "villaos",
+    });
   }
 
   const xml = buildXml(

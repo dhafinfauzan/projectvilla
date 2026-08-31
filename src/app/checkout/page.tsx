@@ -8,7 +8,7 @@ import QrisPayment from "@/components/QrisPayment";
 
 /**
  * Dedicated checkout/payment page. Receives the chosen room + dates from
- * /rooms, confirms price/availability with QloApps, collects guest details and
+ * /rooms, confirms authoritative price/availability with VillaOS, collects guest details and
  * a payment method, then creates the booking and shows the QRIS to pay.
  */
 

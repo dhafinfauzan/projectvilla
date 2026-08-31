@@ -1,154 +1,113 @@
-# The Taru Villas — Ubud, Bali
+# The Taru Villas + VillaOS
 
-Luxury private villa resort website with a full booking system, built with
-Next.js. Bilingual (English / Bahasa Indonesia), fully responsive, with
-scroll animations, parallax, Ken Burns hero slideshow, and snap scrolling.
+One Next.js application for the public villa website, direct booking engine,
+and VillaOS property-management workspace. VillaOS is the primary PMS; QloApps
+is retained only as a migration and rollback source.
 
-## Tech stack
+## What is included
 
-- **Next.js 16** (App Router) + TypeScript
-- **Tailwind CSS 4** — custom theme (forest green / cream / gold)
-- **Framer Motion** — scroll reveals, parallax, page transitions, lightbox
-- **Prisma + SQLite** — booking database (switch to PostgreSQL for production)
+- Public room search, server-side rate quoting, physical-inventory allocation,
+  and QRIS/payment-gateway checkout.
+- Operator desk for arrivals, departures, reservations, room assignment,
+  walk-ins, room status, and housekeeping.
+- Control Center for daily rates and restrictions, folios, payments/refunds,
+  maintenance, night audit, invoices, management reports, QloApps migration,
+  staff roles, audit logs, backups, health, pilot, and cutover controls.
+- Database-level `room + stay date` uniqueness to prevent double allocation.
+- Individual staff sessions, account lockout, server-side permissions, and an
+  immutable operational audit trail.
+- SQLite local profile plus generated PostgreSQL schema and initial migration.
 
-## Getting started
+## Local start
 
 ```bash
 npm install
 cp .env.example .env
-npm run db:setup     # create the SQLite database and seed the villas
-npm run dev          # http://localhost:3000
+npm run db:setup
+npm run admin:bootstrap   # only when no active OWNER exists
+npm run dev
 ```
 
-## Pages
+Open:
 
-| Route | Description |
+- Public website: `http://localhost:3000`
+- VillaOS operations: `http://localhost:3000/admin`
+- Control Center: `http://localhost:3000/admin/control`
+- Health check: `http://localhost:3000/api/health`
+
+`npm run admin:bootstrap` creates a random local owner password and saves it to
+`outputs/VillaOS_LOCAL_LOGIN.txt` with owner-only file permissions. If
+`ADMIN_EMAIL` and `ADMIN_KEY` are set, `npm run db:setup` instead seeds that
+owner account directly.
+
+## Main operator surfaces
+
+| Surface | Capability |
 | --- | --- |
-| `/` | Home — hero slideshow, villas, experiences, gallery marquee |
-| `/villas` | Villa listing |
-| `/villas/[slug]` | Villa detail with photo grid and sticky booking panel |
-| `/gallery` | Filterable masonry gallery with lightbox |
-| `/experiences` | Spa, dining, culture, yoga |
-| `/contact` | Contact info, map, message form |
-| `/booking` | 4-step booking flow (villa → dates → details → confirm) |
-| `/booking/confirmation` | Booking confirmation by code |
-| `/admin` | Booking dashboard (gated by `ADMIN_KEY`, see below) |
+| `/admin` | Today, reservations, modify/cancel/no-show, check-in/out, room board, housekeeping, walk-in |
+| `/admin/control` → Rates | BAR daily price, minimum stay, CTA/CTD, stop-sell |
+| `/admin/control` → Finance | Folio charges, manual payments, refunds, balance, printable invoice |
+| `/admin/control` → Maintenance | Work order, priority, assignment, automatic out-of-order room blocking |
+| `/admin/control` → Night audit | Close business day, exceptions, occupancy and revenue snapshot |
+| `/admin/control` → Reports | Occupancy, revenue pace, source/status mix, CSV exports |
+| `/admin/control` → Migration | QloApps CSV dry-run, validation, idempotent commit, external-ID mapping, cutover mode |
+| `/admin/control` → Team | Staff accounts, roles, password reset, session revocation, disable/enable |
+| `/admin/control` → System | Audit trail, verified local backups, runtime health |
 
-SEO routes `/sitemap.xml` and `/robots.txt` are generated automatically
-(`src/app/sitemap.ts`, `src/app/robots.ts`); set `NEXT_PUBLIC_APP_URL` so
-they emit the right domain. The favicon is the monogram at `src/app/icon.svg`.
+## Roles
 
-## Booking system
+`OWNER`, `MANAGER`, `FRONT_DESK`, `HOUSEKEEPING`, `FINANCE`, and `VIEWER` are
+enforced on the server. Hiding a button is not treated as authorization.
 
-- `GET /api/villas` — list villas with prices
-- `GET /api/availability?villa=&checkIn=&checkOut=` — check unit availability
-- `POST /api/bookings` — create a booking (`PENDING_PAYMENT`), returns a
-  payment redirect URL; totals are computed server-side
-- `GET /api/bookings?code=` — booking details for the confirmation page
-- `POST /api/payment/webhook` — gateway webhook marks bookings
-  `CONFIRMED` / `CANCELLED` (signature-verified)
-
-### Booking hold & auto-expiry
-
-An unpaid booking holds its dates for **60 minutes**
-(`BOOKING_HOLD_MINUTES` in `src/lib/bookings.ts`). Stale holds are expired
-lazily whenever availability is checked, a booking is created, or the admin
-page loads — no cron job required. Payment sessions are created with the
-same window, so the gateway invoice and the hold expire together.
-
-### Payment gateways (Midtrans / Xendit)
-
-Both gateways are fully implemented in `src/lib/payment.ts` — pick one,
-fill in the keys, and you're live. The default `PAYMENT_PROVIDER="mock"`
-skips payment and goes straight to the confirmation page (development only).
-
-**Midtrans (Snap):**
-
-1. Set in `.env`: `PAYMENT_PROVIDER="midtrans"`, `MIDTRANS_SERVER_KEY`
-   (Dashboard → Settings → Access Keys). Sandbox is used unless
-   `MIDTRANS_IS_PRODUCTION="true"`.
-2. Set the Payment Notification URL (Dashboard → Settings → Configuration)
-   to `https://<your-domain>/api/payment/webhook`.
-3. Webhook signatures are verified with
-   `sha512(order_id + status_code + gross_amount + server_key)`.
-
-**Xendit (Invoice):**
-
-1. Set in `.env`: `PAYMENT_PROVIDER="xendit"`, `XENDIT_SECRET_KEY`, and
-   `XENDIT_CALLBACK_TOKEN` (Dashboard → Settings → Webhooks).
-2. Point the *Invoices paid* webhook at
-   `https://<your-domain>/api/payment/webhook`.
-3. Webhooks are verified via the `x-callback-token` header.
-
-### Admin dashboard
-
-`/admin?key=<ADMIN_KEY>` lists every booking with status, guest, dates, and
-revenue stats. Set `ADMIN_KEY` in `.env` to enable it (it is disabled when
-unset). The page is excluded from robots.txt and search indexing. Swap the
-key gate for real auth (NextAuth/Clerk) when staff accounts are needed.
-
-## Deploying to Vercel
-
-1. Push this repo to GitHub and import it in Vercel — Next.js is detected
-   automatically.
-2. SQLite does not persist on serverless. Switch `provider` in
-   `prisma/schema.prisma` to `postgresql`, create a database (Vercel
-   Postgres / Neon / Supabase), and set `DATABASE_URL` in Vercel →
-   Project → Settings → Environment Variables.
-3. Add the other env vars: `NEXT_PUBLIC_APP_URL=https://<your-domain>`,
-   `ADMIN_KEY`, and the payment gateway vars from `.env.example`.
-4. Seed once from your machine:
-   `DATABASE_URL=<prod url> npx prisma db push && DATABASE_URL=<prod url> npx prisma db seed`.
-5. Point the payment gateway webhook at the production domain (see above).
-
-## QloApps integration (optional backend)
-
-This repo can source rooms, availability, and bookings from a
-[QloApps](https://qloapps.com) PMS instead of the built-in Prisma store. The
-QloApps admin/PMS is used as-is — these routes are a thin server-side proxy
-so the QloApps API key never reaches the browser.
-
-**Setup** — put your QloApps webservice details in `.env.local` (gitignored):
+## Database commands
 
 ```bash
-QLOAPPS_API_URL=https://your-qloapps-host        # ngrok URL in dev; changes on restart
-QLOAPPS_API_KEY=your-webservice-key
-# Optional overrides:
-QLOAPPS_ID_HOTEL=1                                # hotel/property id (default 1)
-QLOAPPS_BOOKING_STATUS=1                          # confirm valid codes via schema=synopsis
-QLOAPPS_PAYMENT_STATUS=0
+npm run db:setup             # local SQLite schema + seed
+npm run backup               # timestamped SQLite backup + SHA-256
+npm run verify               # business invariants
+npm run db:postgres:prepare  # regenerate provider-specific Prisma schema
+npm run db:postgres:migrate  # deploy checked-in PostgreSQL migration
+npm run db:postgres:seed     # seed property, rooms, owner and settings
 ```
 
-**Middleware routes** (all server-side; key read from `process.env`):
+For a clean production seed set `SEED_DEMO_DATA="false"`. The post-install
+generator automatically selects the SQLite or PostgreSQL Prisma profile from
+the `DATABASE_URL` scheme.
 
-| Route | Method | QloApps call |
-| --- | --- | --- |
-| `/api/room-types` (`?id=` for one) | GET | `GET /api/room_types` |
-| `/api/check-availability` | POST | `POST /api/hotel_ari` (XML body) |
-| `/api/submit-booking` | POST | `POST /api/bookings` (XML body) |
-| `/api/room-image/{roomTypeId}/{imageId}` | GET | streams `GET /api/images/room_types/...` |
+## QloApps migration contract
 
-Shared logic lives in `src/lib/qloapps-client.ts` (Basic-Auth header, JS→XML
-builder, fetch wrapper with explicit errors for unreachable host, 302
-shop_url redirect, bad key, and non-JSON responses).
+Download `/templates/qloapps-bookings-import.csv` or use the Control Center.
+Required columns are:
 
-> **Image note:** room images are proxied through `/api/room-image/...` rather
-> than linking QloApps' image URL directly — a direct URL would embed the
-> `ws_key` in the browser, defeating the whole point of the proxy.
+```text
+qlo_booking_id,booking_code,villa_slug,room_code,check_in,check_out,
+guest_name,email,phone,guests,total_amount,status,source,payment_ref
+```
 
-**Demo page:** `/rooms` lists QloApps room types, checks availability for a
-date range, and submits a pending booking — wired to all three routes. The
-existing villa site (`/villas`, `/booking`) still runs on Prisma; merge the
-flows once the live QloApps backend is verified.
+Always run a dry-run first. A batch with invalid rows cannot be committed.
+Committed external IDs are mapped so rerunning the same batch does not create
+duplicates. `PMS_BACKEND="qloapps"` remains the emergency compatibility mode;
+`PMS_BACKEND="local"` is VillaOS.
 
-**Testing locally** (QloApps reachable from your machine):
+## Payments and webhooks
 
-1. Open `http://localhost:3000/api/room-types` — should return room JSON.
-2. `curl -X POST localhost:3000/api/check-availability -H 'Content-Type: application/json' -d '{"date_from":"2026-07-10","date_to":"2026-07-13","adults":2}'`
-3. POST to `/api/submit-booking`, then check the QloApps admin for the new booking.
+Supported payment profiles are mock development, Midtrans, Xendit Invoice, and
+Xendit QRIS Payment Requests. Totals are calculated from stored daily rates,
+not browser input. Booking writes accept an `Idempotency-Key` header, reserve
+physical room-nights, and are rate-limited. Webhooks verify signatures/tokens,
+store event hashes, reject event-ID payload changes, validate amounts, and post
+the successful transaction into the guest ledger.
 
-## Photos
+Never expose the public app with `PAYMENT_PROVIDER="mock"` in production.
 
-All photography is hot-linked from [Unsplash](https://unsplash.com) under the
-Unsplash license (free for commercial use). Replace the URLs in
-`src/lib/villas.ts` with real property photos before launch.
+## Validation
+
+```bash
+npm run lint
+npm run build
+npm run verify
+```
+
+The full installation, operations, security, migration, backup, PostgreSQL,
+pilot, cutover, and rollback guide is in
+`outputs/VillaOS_IMPLEMENTATION_AND_OPERATIONS_GUIDE_v1.0.md`.

@@ -1,0 +1,2 @@
+qlo_booking_id,booking_code,villa_slug,room_code,check_in,check_out,guest_name,email,phone,guests,total_amount,status,source,payment_ref
+12345,QLO-12345,taru-garden-villa,G-06,2026-09-01,2026-09-03,Example Guest,guest@example.com,+628123456789,2,8400000,confirmed,QLOAPPS,

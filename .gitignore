@@ -43,4 +43,10 @@ next-env.d.ts
 # database
 prisma/dev.db
 prisma/dev.db-journal
-!.env.example
+/backups/
+!/.env.example
+
+# local credentials & scratch
+outputs/*LOCAL_LOGIN*
+~$*
+/work/

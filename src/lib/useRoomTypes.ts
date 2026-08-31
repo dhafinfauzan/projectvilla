@@ -11,8 +11,8 @@ export type RoomType = {
 };
 
 /**
- * Loads the room types from QloApps via /api/room-types. Single source of
- * truth for every page that shows villas/rooms (home, /rooms).
+ * Loads room types through the PMS compatibility route. VillaOS is the default
+ * source; legacy QloApps remains available only for migration/rollback.
  */
 export function useRoomTypes() {
   const [rooms, setRooms] = useState<RoomType[]>([]);

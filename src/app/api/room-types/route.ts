@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { qloFetch, QloAppsError, flattenLang } from "@/lib/qloapps-client";
+import { isLocalPms, localRoomTypes } from "@/lib/pms-backend";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,18 @@ export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("id");
 
   try {
+    if (isLocalPms()) {
+      const list = await localRoomTypes();
+      if (id) {
+        const roomType = list.find((room) => room.id === Number(id));
+        if (!roomType) {
+          return NextResponse.json({ error: "Room type tidak ditemukan" }, { status: 404 });
+        }
+        return NextResponse.json({ roomType });
+      }
+      return NextResponse.json({ roomTypes: list, backend: "villaos" });
+    }
+
     if (id) {
       const data = await qloFetch<{ room_type?: RawRoomType }>(
         `/api/room_types/${encodeURIComponent(id)}`

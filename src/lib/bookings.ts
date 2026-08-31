@@ -15,12 +15,15 @@ export const BOOKING_HOLD_MINUTES = 60;
  */
 export async function expireStaleBookings(): Promise<number> {
   const cutoff = new Date(Date.now() - BOOKING_HOLD_MINUTES * 60_000);
-  const { count } = await prisma.booking.updateMany({
-    where: {
-      status: "PENDING_PAYMENT",
-      createdAt: { lt: cutoff },
-    },
-    data: { status: "EXPIRED" },
+  const stale = await prisma.booking.findMany({
+    where: { status: "PENDING_PAYMENT", createdAt: { lt: cutoff } },
+    select: { id: true },
   });
-  return count;
+  if (!stale.length) return 0;
+  const ids = stale.map((booking) => booking.id);
+  await prisma.$transaction([
+    prisma.booking.updateMany({ where: { id: { in: ids }, status: "PENDING_PAYMENT" }, data: { status: "EXPIRED" } }),
+    prisma.bookingNight.deleteMany({ where: { bookingId: { in: ids } } }),
+  ]);
+  return ids.length;
 }

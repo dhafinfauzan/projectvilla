@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createPaymentSession } from "@/lib/payment";
 import { expireStaleBookings } from "@/lib/bookings";
+import { allocateUnitForBooking, releaseBookingInventory } from "@/lib/inventory";
+import { getRateQuote } from "@/lib/rates";
+import { ensureFolioForBooking } from "@/lib/finance";
+import { rateLimit, requestIp } from "@/lib/rate-limit";
 
 function generateBookingCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -18,6 +22,8 @@ function generateBookingCode(): string {
  * Creates a PENDING_PAYMENT booking and returns a payment session redirect.
  */
 export async function POST(req: NextRequest) {
+  const limited = rateLimit(`bookings:${requestIp(req.headers)}`, { limit: 10, windowMs: 15 * 60_000 });
+  if (!limited.allowed) return NextResponse.json({ error: "Too many booking attempts" }, { status: 429, headers: { "retry-after": String(limited.retryAfter) } });
   let body: Record<string, unknown>;
   try {
     body = await req.json();
@@ -72,42 +78,38 @@ export async function POST(req: NextRequest) {
   // Release date holds from unpaid bookings before checking availability.
   await expireStaleBookings();
 
-  // Availability check inside a transaction to avoid double-booking races.
-  const booking = await prisma.$transaction(async (tx) => {
-    const overlapping = await tx.booking.count({
-      where: {
-        villaId: villa.id,
-        status: { in: ["PENDING_PAYMENT", "CONFIRMED"] },
-        checkIn: { lt: outDate },
-        checkOut: { gt: inDate },
-      },
-    });
-    if (overlapping >= villa.totalUnits) return null;
-
-    return tx.booking.create({
-      data: {
-        bookingCode: generateBookingCode(),
-        villaId: villa.id,
-        checkIn: inDate,
-        checkOut: outDate,
-        guests,
-        guestName,
-        email,
-        phone,
-        specialRequests: specialRequests || null,
-        nights,
-        // Total is always computed server-side from the stored price.
-        totalAmount: nights * villa.pricePerNight,
-      },
-    });
+  const quote = await getRateQuote(villa, inDate, outDate);
+  if (!quote.sellable) return NextResponse.json({ error: "Rate restrictions prevent this stay", restrictions: quote.restrictions }, { status: 409 });
+  const idempotencyKey = req.headers.get("idempotency-key")?.trim() || null;
+  if (idempotencyKey) {
+    const existing = await prisma.booking.findUnique({ where: { idempotencyKey } });
+    if (existing) return NextResponse.json({ bookingCode: existing.bookingCode, totalAmount: existing.totalAmount, redirectUrl: `/booking/confirmation?code=${existing.bookingCode}`, idempotentReplay: true });
+  }
+  const booking = await prisma.booking.create({
+    data: {
+      bookingCode: generateBookingCode(),
+      idempotencyKey,
+      villaId: villa.id,
+      checkIn: inDate,
+      checkOut: outDate,
+      guests,
+      guestName,
+      email,
+      phone,
+      specialRequests: specialRequests || null,
+      nights,
+      totalAmount: quote.total,
+    },
   });
-
-  if (!booking) {
+  const assigned = await allocateUnitForBooking({ bookingId: booking.id, villaId: villa.id, checkIn: inDate, checkOut: outDate });
+  if (!assigned) {
+    await prisma.booking.delete({ where: { id: booking.id } });
     return NextResponse.json(
       { error: "Villa is no longer available for these dates" },
       { status: 409 }
     );
   }
+  await ensureFolioForBooking(booking.id);
 
   let payment;
   try {
@@ -125,6 +127,7 @@ export async function POST(req: NextRequest) {
       where: { id: booking.id },
       data: { status: "CANCELLED" },
     });
+    await releaseBookingInventory(booking.id);
     console.error("Payment session failed:", err);
     return NextResponse.json(
       { error: "Payment gateway is unavailable. Please try again." },

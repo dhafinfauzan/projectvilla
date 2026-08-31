@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { expireStaleBookings } from "@/lib/bookings";
+import { availableUnitCount } from "@/lib/inventory";
+import { getRateQuote } from "@/lib/rates";
 
 /**
  * GET /api/availability?villa=<slug>&checkIn=YYYY-MM-DD&checkOut=YYYY-MM-DD
@@ -31,17 +33,16 @@ export async function GET(req: NextRequest) {
   // Release date holds from unpaid bookings before counting.
   await expireStaleBookings();
 
-  const overlapping = await prisma.booking.count({
-    where: {
-      villaId: villa.id,
-      status: { in: ["PENDING_PAYMENT", "CONFIRMED"] },
-      checkIn: { lt: outDate },
-      checkOut: { gt: inDate },
-    },
-  });
+  const [availableUnits, quote] = await Promise.all([
+    availableUnitCount(villa.id, inDate, outDate),
+    getRateQuote(villa, inDate, outDate),
+  ]);
 
   return NextResponse.json({
-    available: overlapping < villa.totalUnits,
-    pricePerNight: villa.pricePerNight,
+    available: availableUnits > 0 && quote.sellable,
+    availableUnits,
+    pricePerNight: quote.averagePerNight,
+    totalPrice: quote.total,
+    restrictions: quote.restrictions,
   });
 }

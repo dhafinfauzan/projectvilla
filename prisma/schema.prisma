@@ -3,28 +3,31 @@ generator client {
 }
 
 datasource db {
-  // SQLite for development. Switch to PostgreSQL/MySQL in production by
-  // changing the provider and DATABASE_URL.
+  // The local release intentionally uses SQLite. A production PostgreSQL
+  // schema and rollout guide live in prisma/postgresql and docs/.
   provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
 model Villa {
-  id            String    @id @default(cuid())
-  slug          String    @unique
+  id            String      @id @default(cuid())
+  slug          String      @unique
   name          String
-  pricePerNight Int // IDR
+  pricePerNight Int // IDR fallback when a daily rate is not configured
   maxGuests     Int
   bedrooms      Int
   sizeSqm       Int
-  totalUnits    Int       @default(1)
+  totalUnits    Int         @default(1)
   bookings      Booking[]
+  roomUnits     RoomUnit[]
+  dailyRates    DailyRate[]
 }
 
 model Booking {
-  id              String   @id @default(cuid())
-  bookingCode     String   @unique
-  villa           Villa    @relation(fields: [villaId], references: [id])
+  id              String               @id @default(cuid())
+  bookingCode     String               @unique
+  idempotencyKey  String?              @unique
+  villa           Villa                @relation(fields: [villaId], references: [id])
   villaId         String
   checkIn         DateTime
   checkOut        DateTime
@@ -35,12 +38,345 @@ model Booking {
   specialRequests String?
   nights          Int
   totalAmount     Int // IDR
-  currency        String   @default("IDR")
-  // PENDING_PAYMENT -> CONFIRMED (after payment webhook) | CANCELLED | EXPIRED
-  status          String   @default("PENDING_PAYMENT")
-  // Filled in by the payment gateway integration (Midtrans/Xendit/Stripe)
+  currency        String               @default("IDR")
+  status          String               @default("PENDING_PAYMENT")
   paymentProvider String?
   paymentRef      String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  source          String               @default("DIRECT_WEB")
+  assignedUnit    RoomUnit?            @relation(fields: [assignedUnitId], references: [id])
+  assignedUnitId  String?
+  internalNotes   String?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  inventoryNights BookingNight[]
+  folio           Folio?
+  payments        PaymentTransaction[]
+
+  @@index([status, checkIn, checkOut])
+  @@index([villaId, checkIn, checkOut])
+  @@index([assignedUnitId, checkIn, checkOut])
+  @@index([email, createdAt])
+}
+
+model BookingNight {
+  id         String   @id @default(cuid())
+  booking    Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId  String
+  roomUnit   RoomUnit @relation(fields: [roomUnitId], references: [id], onDelete: Cascade)
+  roomUnitId String
+  stayDate   DateTime
+  createdAt  DateTime @default(now())
+
+  // This is the database-level guard against two reservations owning the
+  // same physical room on the same night.
+  @@unique([roomUnitId, stayDate])
+  @@unique([bookingId, stayDate])
+  @@index([stayDate, roomUnitId])
+}
+
+model RoomUnit {
+  id                 String              @id @default(cuid())
+  villa              Villa               @relation(fields: [villaId], references: [id], onDelete: Cascade)
+  villaId            String
+  code               String
+  floor              String?
+  operationalStatus  String              @default("SELLABLE")
+  housekeepingStatus String              @default("INSPECTED")
+  bookings           Booking[]
+  inventoryNights    BookingNight[]
+  housekeepingTasks  HousekeepingTask[]
+  maintenanceTickets MaintenanceTicket[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@unique([villaId, code])
+  @@index([villaId, operationalStatus, housekeepingStatus])
+}
+
+model HousekeepingTask {
+  id           String   @id @default(cuid())
+  roomUnit     RoomUnit @relation(fields: [roomUnitId], references: [id], onDelete: Cascade)
+  roomUnitId   String
+  businessDate DateTime
+  taskType     String   @default("TURNOVER")
+  status       String   @default("OPEN")
+  priority     String   @default("NORMAL")
+  assignee     String?
+  note         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([businessDate, status])
+  @@index([roomUnitId, businessDate])
+}
+
+model StaffUser {
+  id               String         @id @default(cuid())
+  email            String         @unique
+  name             String
+  passwordHash     String
+  role             String         @default("VIEWER")
+  active           Boolean        @default(true)
+  failedLoginCount Int            @default(0)
+  lockedUntil      DateTime?
+  lastLoginAt      DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  sessions         StaffSession[]
+  auditLogs        AuditLog[]
+
+  @@index([active, role])
+}
+
+model StaffSession {
+  id         String    @id @default(cuid())
+  user       StaffUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  lastSeenAt DateTime  @default(now())
+  userAgent  String?
+  ipAddress  String?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt, revokedAt])
+}
+
+model AuditLog {
+  id         String     @id @default(cuid())
+  actor      StaffUser? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  beforeJson String?
+  afterJson  String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime   @default(now())
+
+  @@index([createdAt])
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
+}
+
+model RatePlan {
+  id          String      @id @default(cuid())
+  code        String      @unique
+  name        String
+  description String?
+  refundable  Boolean     @default(true)
+  active      Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  dailyRates  DailyRate[]
+}
+
+model DailyRate {
+  id                String   @id @default(cuid())
+  villa             Villa    @relation(fields: [villaId], references: [id], onDelete: Cascade)
+  villaId           String
+  ratePlan          RatePlan @relation(fields: [ratePlanId], references: [id], onDelete: Cascade)
+  ratePlanId        String
+  businessDate      DateTime
+  price             Int
+  minStay           Int      @default(1)
+  closedToArrival   Boolean  @default(false)
+  closedToDeparture Boolean  @default(false)
+  stopSell          Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([villaId, ratePlanId, businessDate])
+  @@index([businessDate, stopSell])
+}
+
+model Folio {
+  id        String               @id @default(cuid())
+  booking   Booking              @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId String               @unique
+  status    String               @default("OPEN")
+  currency  String               @default("IDR")
+  notes     String?
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+  entries   FolioEntry[]
+  payments  PaymentTransaction[]
+
+  @@index([status, updatedAt])
+}
+
+model FolioEntry {
+  id          String    @id @default(cuid())
+  folio       Folio     @relation(fields: [folioId], references: [id], onDelete: Cascade)
+  folioId     String
+  entryType   String
+  description String
+  debit       Int       @default(0)
+  credit      Int       @default(0)
+  externalRef String?   @unique
+  serviceDate DateTime  @default(now())
+  voidedAt    DateTime?
+  voidReason  String?
+  createdBy   String?
+  createdAt   DateTime  @default(now())
+
+  @@index([folioId, serviceDate])
+  @@index([entryType, createdAt])
+}
+
+model PaymentTransaction {
+  id           String   @id @default(cuid())
+  booking      Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId    String
+  folio        Folio?   @relation(fields: [folioId], references: [id], onDelete: SetNull)
+  folioId      String?
+  provider     String
+  providerRef  String   @unique
+  type         String   @default("PAYMENT")
+  status       String   @default("SUCCEEDED")
+  amount       Int
+  currency     String   @default("IDR")
+  method       String?
+  occurredAt   DateTime @default(now())
+  metadataJson String?
+  createdAt    DateTime @default(now())
+
+  @@index([bookingId, occurredAt])
+  @@index([provider, status, occurredAt])
+}
+
+model MaintenanceTicket {
+  id              String    @id @default(cuid())
+  ticketCode      String    @unique
+  roomUnit        RoomUnit  @relation(fields: [roomUnitId], references: [id], onDelete: Cascade)
+  roomUnitId      String
+  title           String
+  description     String?
+  priority        String    @default("NORMAL")
+  status          String    @default("OPEN")
+  blocksInventory Boolean   @default(false)
+  reportedBy      String?
+  assignedTo      String?
+  dueAt           DateTime?
+  resolvedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status, priority, createdAt])
+  @@index([roomUnitId, status])
+}
+
+model BusinessDay {
+  id            String         @id @default(cuid())
+  businessDate  DateTime       @unique
+  status        String         @default("OPEN")
+  openedAt      DateTime       @default(now())
+  closedAt      DateTime?
+  closedBy      String?
+  summaryJson   String?
+  nightAuditRun NightAuditRun?
+}
+
+model NightAuditRun {
+  id            String      @id @default(cuid())
+  businessDay   BusinessDay @relation(fields: [businessDayId], references: [id], onDelete: Cascade)
+  businessDayId String      @unique
+  status        String      @default("COMPLETED")
+  checklistJson String
+  summaryJson   String
+  runBy         String
+  startedAt     DateTime    @default(now())
+  completedAt   DateTime?
+}
+
+model ImportBatch {
+  id            String         @id @default(cuid())
+  source        String         @default("QLOAPPS")
+  fileName      String
+  mode          String         @default("DRY_RUN")
+  status        String         @default("STAGED")
+  totalRows     Int            @default(0)
+  validRows     Int            @default(0)
+  invalidRows   Int            @default(0)
+  committedRows Int            @default(0)
+  summaryJson   String?
+  createdBy     String
+  createdAt     DateTime       @default(now())
+  committedAt   DateTime?
+  records       ImportRecord[]
+
+  @@index([source, createdAt])
+  @@index([status, createdAt])
+}
+
+model ImportRecord {
+  id          String      @id @default(cuid())
+  batch       ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  batchId     String
+  rowNumber   Int
+  externalId  String?
+  entityType  String      @default("BOOKING")
+  status      String      @default("VALID")
+  payloadJson String
+  errorsJson  String?
+  localId     String?
+  createdAt   DateTime    @default(now())
+
+  @@unique([batchId, rowNumber])
+  @@index([externalId, entityType])
+}
+
+model ExternalIdMapping {
+  id           String   @id @default(cuid())
+  source       String
+  entityType   String
+  externalId   String
+  localId      String
+  checksum     String?
+  lastSyncedAt DateTime @default(now())
+
+  @@unique([source, entityType, externalId])
+  @@index([localId, entityType])
+}
+
+model WebhookEvent {
+  id          String    @id @default(cuid())
+  provider    String
+  eventId     String
+  payloadHash String
+  status      String    @default("RECEIVED")
+  attempts    Int       @default(1)
+  lastError   String?
+  processedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([provider, eventId])
+  @@index([status, createdAt])
+}
+
+model BackupRun {
+  id          String    @id @default(cuid())
+  status      String
+  storageType String    @default("LOCAL_FILE")
+  location    String?
+  sizeBytes   Int?
+  checksum    String?
+  error       String?
+  createdBy   String
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  @@index([createdAt])
+}
+
+model SystemSetting {
+  key         String   @id
+  value       String
+  description String?
+  updatedBy   String?
+  updatedAt   DateTime @updatedAt
 }
